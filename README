@@ -1,0 +1,23 @@
+# faetus
+
+Faetus is an FTP server which provides an interface to Amazon S3 file storage.
+The code is based on pyftpdlib and borrows heavily from chmouel's
+ftp-cloudfs (http://github.com/chmouel/ftp-cloudfs).
+
+
+INSTALLATION:
+$ pip install -r REQUIREMENTS
+$ python setup.py install
+
+
+USAGE:
+- Start with default options:
+$ faetus-server
+        
+- Specify options:
+$ faetus-server -b X.X.X.X -p 21
+
+
+AUTHOR:
+Drew Engelson <drew@engelson.net>
+http://tomatohater.com
