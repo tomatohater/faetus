@@ -7,8 +7,9 @@ from socket import gethostbyname, gaierror
 
 from pyftpdlib import ftpserver
 
-from faetus.server import FaetusAuthorizer, FaetusFS
+from faetus.server import FaetusFTPHandler, FaetusAuthorizer, FaetusFS
 from faetus.constants import version, default_address, default_port
+
 
 
 def setup_log(log_file=None):
@@ -32,8 +33,14 @@ def main():
                       type="int",
                       dest="port",
                       default=default_port,
-                      help="Port to bind the server default: %d." %
-                      (default_port))
+                      help="Port to bind the server: %d" % (default_port))
+
+    parser.add_option('-r', '--range',
+                      type="str",
+                      dest="range",
+                      default="",
+                      help="Range to use for passive ports (min,max) inclusive: %d,%d"
+                        % (60000, 65000))
 
     parser.add_option('-b', '--bind-address',
                       type="str",
@@ -46,27 +53,34 @@ def main():
                       dest="log_file",
                       default=None,
                       help="Log File: Default stdout")
+
     (options, _) = parser.parse_args()
 
     setup_log(options.log_file)
 
-    ftp_handler = ftpserver.FTPHandler
-
+    ftp_handler = FaetusFTPHandler
     ftp_handler.banner = 'Faetus %s using %s' % \
         (version, ftp_handler.banner)
     ftp_handler.authorizer = FaetusAuthorizer()
     
     ftp_handler.abstracted_fs = FaetusFS
-    ftp_handler.passive_ports = range(60000, 65535)
     
+    # Port range must include both start and end to be valid.
+    range_spec = options.range.split(",")
+    if len(range_spec) >= 2:
+      (min_port, max_port) = (int(range_spec[0]), int(range_spec[1]))
+      ftp_handler.passive_ports = range(min_port, max_port)
+      ftpserver.log("Passive mode port range: %i-%i" % (min_port, max_port))
+
+    ftpd = ftpserver.FTPServer((options.bind_address,
+                                options.port),
+                               ftp_handler)
+
     try:
         ftp_handler.masquerade_address = gethostbyname(options.bind_address)
     except gaierror, (_, errmsg):
         sys.exit('Address error: %s' % errmsg)
 
-    ftpd = ftpserver.FTPServer((options.bind_address,
-                                options.port),
-                               ftp_handler)
     ftpd.serve_forever()
 
 

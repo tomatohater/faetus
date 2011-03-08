@@ -1,12 +1,81 @@
 import os
 import datetime
+import ftplib
 import time
 import mimetypes
 import tempfile
 
 from pyftpdlib import ftpserver
 from boto.s3.connection import S3Connection
+from boto.exception import S3ResponseError, S3CreateError
 from boto.s3.key import Key
+from boto.s3.bucket import Bucket
+from boto.s3.bucketlistresultset import BucketListResultSet
+    
+class FaetusFTPHandler(ftpserver.FTPHandler):
+        
+    def __init__(self, conn, server):
+      super(FaetusFTPHandler, self).__init__(conn, server)
+     
+    def ftp_NLST(self, path):
+      return self.ftp_LIST(path, mode='NLST')
+
+    def ftp_LIST(self, path, mode='LIST'):
+        """Return a list of files in the specified directory.
+        If mode='NLST', in a compact name-list form to the client.
+        """
+
+        # FIXME, is this enough? We need to avoid super's attempt to call
+        # "sort" on the resulting BucketListResultSet
+
+        try:
+          line = self.fs.fs2ftp(path)
+          list = []
+          if self.fs.isdir(path):
+                listing = self.fs.listdir(path)
+                # Convert iterator to list for FTP
+                if mode == 'NLST':
+                  for object in listing:
+                    list.append(object.name)
+                else:   
+                  if isinstance(listing, BucketListResultSet):
+                      formatted_listing = self.fs.format_list_objects(listing)
+                  else:
+                      formatted_listing = self.fs.format_list_buckets(listing)
+                  for text in formatted_listing:
+                      list.append(text)
+          else:
+                # list = [ os.path.basename(path) ]
+                for candidate in [path, self.fs._cwd + '/' + path]:
+                  if self.fs.isfile(candidate):
+                    _, bucket, obj = self.fs.parse_fspath(candidate)
+                    if mode == 'NLST':
+                      list.append(candidate)
+                    else:
+                      # This fails due to inconsistent time formatting:
+                      #  Line 376, in format_list_objects "%Y-%m-%dT%H:%M:%S")[0:6]).strftime("%b %d %H:%M")
+                      #  File "_strptime.py", line 454, in _strptime_time return _strptime(data_string, format)[0]
+                      #  File "_strptime.py", line 325, in _strptime (data_string, format))
+                      # ValueError: time data 'Tue, 08 Mar 2011 10:14:25 GM' does not match format '%Y-%m-%dT%H:%M:%S'
+                      
+                      # list = self.fs.format_list_objects([self.fs.open(candidate,'r').obj])
+
+                      # To unblock current work, just print the filename:
+                      list.append(candidate)
+
+
+                    break;
+
+          data = ''
+          if list:
+            data = ''.join(list) + '\r\n'
+          self.push_dtp_data(data, cmd="NLST")
+          return
+
+        except OSError, err:
+          self.respond('550 %s.' % ftpserver._strerror(err)) 
+          return
+
 
 
 class FaetusOperations(object):
@@ -125,6 +194,20 @@ class FaetusFS(ftpserver.AbstractedFS):
     '''Amazon S3 File system emulation for FTP server.
     '''
 
+    def __init__(self, root, cmd_channel): super(FaetusFS, self).__init__(root, cmd_channel)
+
+    def get_all_buckets(self):
+      try: 
+        return operations.connection.get_all_buckets()
+      except S3ResponseError as e:
+        raise OSError(1, "S3 error (probably bad credentials)" + str(e))
+
+    def create_bucket(self, bucket):
+      try: 
+        return operations.connection.create_bucket(bucket)
+      except S3CreateError as e:
+        raise OSError(1, "S3 error (probably bucket name conflict)" + str(e))
+
     def parse_fspath(self, path):
         '''Returns a (username, site, filename) tuple. For shorter paths
         replaces not provided values with empty strings.
@@ -148,18 +231,22 @@ class FaetusFS(ftpserver.AbstractedFS):
             _, bucket, obj = self.parse_fspath(path)
 
             if not bucket:
-                self.cwd = self.fs2ftp(path)
+                if (self.isdir(path)):
+                  self._cwd = self.fs2ftp(path)
+                else: 
+                    raise OSError(550, 'Failed to change directory: Path is not a dir: ' + path)
                 return
 
             if not obj:
                 try:
                     operations.connection.get_bucket(bucket)
-                    self.cwd = self.fs2ftp(path)
+                    self._cwd = self.fs2ftp(path)
                     return
-                except:
-                    raise OSError(2, 'No such file or directory')
+                except S3ResponseError:
+                    raise OSError(550, 'Failed to change directory.')
+                    
+            raise OSError(550, 'Path is not a dir: ' + obj)
 
-        raise OSError(550, 'Failed to change directory.')
 
     def mkdir(self, path):
         try:
@@ -169,7 +256,7 @@ class FaetusFS(ftpserver.AbstractedFS):
         except(ValueError):
             raise OSError(2, 'No such file or directory')
 
-        operations.connection.create_bucket(bucket)
+        self.create_bucket(bucket)
 
     def listdir(self, path):
         try:
@@ -178,7 +265,7 @@ class FaetusFS(ftpserver.AbstractedFS):
             raise OSError(2, 'No such file or directory')
 
         if not bucket and not obj:
-            return operations.connection.get_all_buckets()
+            return self.get_all_buckets()
 
         if bucket and not obj:
             try:
@@ -186,6 +273,7 @@ class FaetusFS(ftpserver.AbstractedFS):
                 return cnt.list()
             except:
                 raise OSError(2, 'No such file or directory')
+        
 
     def rmdir(self, path):
         _, bucket, name = self.parse_fspath(path)
@@ -245,7 +333,7 @@ class FaetusFS(ftpserver.AbstractedFS):
             raise OSError(2, 'No such file or directory')
 
         if not bucket and not obj:
-            buckets = operations.connection.get_all_buckets()
+            buckets = self.get_all_buckets()
             return bucket in buckets
 
         if bucket and not obj:
@@ -255,6 +343,10 @@ class FaetusFS(ftpserver.AbstractedFS):
             except:
                 raise OSError(2, 'No such file or directory')
             return obj in objects
+
+    def isfile(self, path):
+        _, bucket, name = self.parse_fspath(path)
+        return name
 
     def stat(self, path):
         _, bucket, name = self.parse_fspath(path)
@@ -278,9 +370,9 @@ class FaetusFS(ftpserver.AbstractedFS):
             _, bucket, obj = self.parse_fspath(path)
         except(ValueError):
             raise OSError(2, 'No such file or directory')
-
+        
         if not bucket and not obj:
-            buckets = operations.connection.get_all_buckets()
+            buckets = self.get_all_buckets()
             return self.format_list_buckets(buckets)
 
         if bucket and not obj:
@@ -290,6 +382,7 @@ class FaetusFS(ftpserver.AbstractedFS):
             except:
                 raise OSError(2, 'No such file or directory')
             return self.format_list_objects(objects)
+
 
     def format_list_objects(self, items):
         for item in items:
