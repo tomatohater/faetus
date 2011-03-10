@@ -10,7 +10,11 @@ from pyftpdlib import ftpserver
 from faetus.server import FaetusFTPHandler, FaetusAuthorizer, FaetusFS
 from faetus.constants import version, default_address, default_port
 
-
+def dict_from_string(string):
+		""" Transform a colon-separated pair into a dict."""
+		# Ugh. ''.split(":") is [''], not [] as it should be.
+		if (string): return dict([string.split(":")])
+		else: return dict()
 
 def setup_log(log_file=None):
     ''' Setup Logging '''
@@ -53,7 +57,20 @@ def main():
                       dest="log_file",
                       default=None,
                       help="Log File: Default stdout")
+					  
+    parser.add_option('-u', '--username-transform-map',
+                      type="str",
+                      dest="username_transform_map_str",
+                      default=None,
+                      help="mapping from ftp username to AWS_ACCESS_KEY_ID: username:AWS_ACCESS_KEY. Default: none.")
 
+    parser.add_option('-v', '--password-transform-map',
+                      type="str",
+                      dest="password_transform_map_str",
+                      default=None,
+                      help="mapping from ftp password to AWS_SECRET_ACCESS_KEY: password:AWS_SECRET_ACCESS_KEY.\n Default: none. WARNING: This is not secure against local user eavesdropping!")
+
+					  
     (options, _) = parser.parse_args()
 
     setup_log(options.log_file)
@@ -61,7 +78,13 @@ def main():
     ftp_handler = FaetusFTPHandler
     ftp_handler.banner = 'Faetus %s using %s' % \
         (version, ftp_handler.banner)
-    ftp_handler.authorizer = FaetusAuthorizer()
+    
+    username_transform_map = dict_from_string(options.username_transform_map_str)
+    password_transform_map = dict_from_string(options.password_transform_map_str)
+    
+    ftpserver.log("Using username map: %s " % (username_transform_map))
+	
+    ftp_handler.authorizer = FaetusAuthorizer(username_transform_map, password_transform_map)
     
     ftp_handler.abstracted_fs = FaetusFS
     
