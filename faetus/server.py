@@ -325,6 +325,14 @@ class FaetusFS(ftpserver.AbstractedFS):
                 raise OSError(2, 'No such file or directory')
             return self.format_list_objects(objects)
 
+        if bucket and obj:
+          # This is a key, which is not supported literally as a directory.
+          # Try interpreting as a hierarchical key:
+            try:
+                objects = operations.connection.get_bucket().list(prefix=obj, delimiter=cloud_sep)
+            except:
+                raise OSError(2, 'No such file or directory')
+            return self.format_list_objects(objects)
 
 
     def rmdir(self, path):
@@ -419,7 +427,6 @@ class FaetusFS(ftpserver.AbstractedFS):
                 # Return a part-bogus stat with the data we do have.
                 st_mode = st_mode | DIR_MODE_FLAG
     
-                return stat_result
             else: # Key
                 bucket = operations.connection.get_bucket(bucket_name)
                 if (key_name[-1] == cloud_sep): # Virtual directory for hierarchical key.
