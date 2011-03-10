@@ -99,7 +99,7 @@ class FaetusAuthorizer(ftpserver.DummyAuthorizer):
             s3_password = self.transform_password(password)
             operations.authenticate(s3_username, s3_password)
             return True
-        except(Exception) as e:
+        except Exception, e:
             ftpserver.logerror(e)
             return False
 
@@ -170,7 +170,7 @@ class FaetusFD(object):
         self.temp_file.close()
         try: 
             self.obj.set_contents_from_filename(self.temp_file_path)
-        except S3ResponseError as e:
+        except S3ResponseError, e:
             # Avoid crashing when the "directory" vanished while we were processing it.
             # This is actually due to a server error. It seems to happen after
             # a "rm file" command incorrectly deletes an entire directory. (!!!)
@@ -204,13 +204,13 @@ class FaetusFS(ftpserver.AbstractedFS):
     def get_all_buckets(self):
       try: 
         return list(operations.connection.get_all_buckets())
-      except S3ResponseError as e:
+      except S3ResponseError, e:
         raise OSError(1, "S3 error (probably bad credentials)" + str(e))
 
     def create_bucket(self, bucket):
       try: 
         return operations.connection.create_bucket(bucket)
-      except (S3CreateError, S3ResponseError) as e:
+      except (S3CreateError, S3ResponseError), e:
         raise OSError(1, "S3 error (probably bucket name conflict)" + str(e))
 
     def parse_fspath(self, path):
@@ -316,7 +316,7 @@ class FaetusFS(ftpserver.AbstractedFS):
         
         if not bucket and not obj:
             buckets = self.get_all_buckets()
-            return self.list_buckets(buckets)
+            return self.format_list_buckets(buckets)
 
         if bucket and not obj:
             try:
@@ -437,7 +437,7 @@ class FaetusFS(ftpserver.AbstractedFS):
             return os.stat_result([st_mode, 0, 0, 0, 0, 0, st_size, 0, 0, 0])  #FIXME more stats (mtime)
 
         
-        except Exception as e:
+        except Exception,  e:
             ftpserver.logerror("Failed stat(%s) %s %s: %s " % (path, bucket_name, key_name, e))
             raise OSError(2, 'No such file or directory')
 
