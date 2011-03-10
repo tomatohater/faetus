@@ -11,6 +11,7 @@ from faetus.constants import default_address, default_port
 class FaetusTest(unittest.TestCase):
     ''' Faetus main test '''
 
+
     def setUp(self):
         if not all(['AWS_ACCESS_KEY_ID' in os.environ,
                     'AWS_SECRET_ACCESS_KEY' in os.environ]):
@@ -19,13 +20,14 @@ class FaetusTest(unittest.TestCase):
 
         self.username = os.environ['AWS_ACCESS_KEY_ID']
         self.password = os.environ['AWS_SECRET_ACCESS_KEY']
+        self.test_bucket_name = "/faetus_testing-" + self.username.lower()
         self.cnx = ftplib.FTP()
         self.cnx.host = default_address
         self.cnx.port = default_port
         self.cnx.connect()
         self.cnx.login(self.username, self.password)
-        self.cnx.mkd("/faetus_testing")
-        self.cnx.cwd("/faetus_testing")
+        self.cnx.mkd(self.test_bucket_name)
+        self.cnx.cwd(self.test_bucket_name)
 
     def test_mkdir_chdir_rmdir(self):
         ''' mkdir/chdir/rmdir directory '''
@@ -66,7 +68,7 @@ class FaetusTest(unittest.TestCase):
                             StringIO.StringIO("Hello Moto"))
         #self.assertRaises does not seems to work no idea why but that works
         try:
-            self.cnx.cwd("/faetus_testing/testfile.txt")
+            self.cnx.cwd(self.test_bucket_name + "/testfile.txt")
         except(ftplib.error_perm):
             pass
         else:
@@ -87,7 +89,7 @@ class FaetusTest(unittest.TestCase):
         self.cnx.delete("testfile.txt")
 
     def tearDown(self):
-        self.cnx.rmd("/faetus_testing")
+        self.cnx.rmd(self.test_bucket_name)
         self.cnx.close()
 
 if __name__ == '__main__':
