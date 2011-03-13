@@ -73,10 +73,13 @@ class FaetusAuthorizer(ftpserver.DummyAuthorizer):
     '''
     users = {}
     
-    def __init__(self, username_transform_map=None,  password_transform_map=None):
+    def __init__(self, allowed_users=None, username_transform_map=None,  password_transform_map=None):
         super(FaetusAuthorizer, self).__init__()
         self.username_transform_map = username_transform_map or {}
         self.password_transform_map = password_transform_map or {}
+        self.allowed_users = allowed_users
+        if self.allowed_users == []:
+          ftpserver.logwarn("Warning: allowed_users is empty. No users can log in!")
 
     def transform_username(self, username):
         ftpserver.log("transforming username %s" % (username))
@@ -95,10 +98,16 @@ class FaetusAuthorizer(ftpserver.DummyAuthorizer):
         password: your amazon AWS_SECRET_ACCESS_KEY or a mapped password
         '''
         try:
-            s3_username = self.transform_username(username)
-            s3_password = self.transform_password(password)
-            operations.authenticate(s3_username, s3_password)
-            return True
+            # Check for None, not false here. If the server
+            # really wants to allow an empty list of allowed users, 
+            # then allow no users.
+            if (self.allowed_users is None) or (username in self.allowed_users):
+              s3_username = self.transform_username(username)
+              s3_password = self.transform_password(password)
+              operations.authenticate(s3_username, s3_password)
+              return True
+            else:
+              return False
         except Exception, e:
             ftpserver.logerror(e)
             return False

@@ -70,6 +70,14 @@ def main():
                       default=None,
                       help="mapping from ftp password to AWS_SECRET_ACCESS_KEY: password:AWS_SECRET_ACCESS_KEY.\n Default: none. WARNING: This is not secure against local user eavesdropping!")
 
+    parser.add_option('-a', '--allowed-users',
+                       type="str",
+                       dest="allowed_users_str",
+                       default=None,
+                       help="comma-separated list of allowed logins: ftp_username1, ftp_username2. " +
+                       "Set this option to prevent using this server as an 'open relay' to S3 account." + 
+                       "Username is checked against this list *before* username-transform-map is applied." + 
+                       "Default: none") 
 					  
     (options, _) = parser.parse_args()
 
@@ -83,8 +91,16 @@ def main():
     password_transform_map = dict_from_string(options.password_transform_map_str)
     
     ftpserver.log("Using username map: %s " % (username_transform_map))
-	
-    ftp_handler.authorizer = FaetusAuthorizer(username_transform_map, password_transform_map)
+
+    # Check for None, not false here. If the server
+    # really wants to allow an empty list of allowed users, 
+    # then allow no users.
+    if options.allowed_users_str is not None:
+      allowed_users = options.allowed_users_str.split(",")
+    else:
+      allowed_users = None
+
+    ftp_handler.authorizer = FaetusAuthorizer(allowed_users, username_transform_map, password_transform_map)
     
     ftp_handler.abstracted_fs = FaetusFS
     
